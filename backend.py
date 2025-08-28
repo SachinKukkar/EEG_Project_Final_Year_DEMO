@@ -21,33 +21,96 @@ USERS_PATH = os.path.join(ASSETS_DIR, 'users.json')
 
 # --- 1. USER REGISTRATION ---
 def register_user(username, subject_id):
-    # (Code from the previous response is perfect here)
     print(f"--- Registering new user: {username} (Subject ID: {subject_id}) ---")
     if not os.path.exists(ASSETS_DIR): os.makedirs(ASSETS_DIR)
     
+    # Load existing users
+    users = {}
+    if os.path.exists(USERS_PATH):
+        with open(USERS_PATH, 'r') as f: users = json.load(f)
+    
+    # Check if subject ID is already used
+    for existing_user, existing_subject_id in users.items():
+        if existing_subject_id == subject_id:
+            error_msg = f"Subject ID {subject_id} is already registered to user '{existing_user}'"
+            print(f"❌ Error: {error_msg}")
+            return False, error_msg
+    
+    # Check if username already exists
+    if username in users:
+        error_msg = f"Username '{username}' is already registered with Subject ID {users[username]}"
+        print(f"❌ Error: {error_msg}")
+        return False, error_msg
+    
     subject_files = get_subject_files(DATA_DIR, subject_id)
     if not subject_files:
-        print(f"Error: No resting-state files found for Subject ID {subject_id}.")
-        return False
+        error_msg = f"No resting-state files found for Subject ID {subject_id}"
+        print(f"❌ Error: {error_msg}")
+        return False, error_msg
 
     all_segments = [seg for f in subject_files for seg in load_and_segment_csv(f) if len(seg) > 0]
     if not all_segments:
-        print(f"Error: Could not extract valid data segments for {username}.")
-        return False
+        error_msg = f"Could not extract valid data segments for {username}"
+        print(f"❌ Error: {error_msg}")
+        return False, error_msg
         
     user_data = np.array(all_segments)
     np.save(os.path.join(ASSETS_DIR, f'data_{username}.npy'), user_data)
     
-    users = {}
-    if os.path.exists(USERS_PATH):
-        with open(USERS_PATH, 'r') as f: users = json.load(f)
-        
-    if username not in users:
-        users[username] = subject_id
-        with open(USERS_PATH, 'w') as f: json.dump(users, f, indent=4)
+    users[username] = subject_id
+    with open(USERS_PATH, 'w') as f: json.dump(users, f, indent=4)
             
-    print(f"✅ User {username} registered successfully.")
-    return True
+    success_msg = f"User {username} registered successfully with {len(all_segments)} data segments"
+    print(f"✅ {success_msg}")
+    return True, success_msg
+
+def deregister_user(username):
+    """Remove a registered user and their data."""
+    print(f"--- De-registering user: {username} ---")
+    
+    # Check if users file exists
+    if not os.path.exists(USERS_PATH):
+        error_msg = "No users registered yet."
+        print(f"❌ Error: {error_msg}")
+        return False, error_msg
+    
+    # Load existing users
+    with open(USERS_PATH, 'r') as f:
+        users = json.load(f)
+    
+    # Check if user exists
+    if username not in users:
+        error_msg = f"User '{username}' is not registered."
+        print(f"❌ Error: {error_msg}")
+        return False, error_msg
+    
+    # Remove user data file
+    user_data_path = os.path.join(ASSETS_DIR, f'data_{username}.npy')
+    if os.path.exists(user_data_path):
+        os.remove(user_data_path)
+        print(f"Removed data file: {user_data_path}")
+    
+    # Remove user from registry
+    subject_id = users[username]
+    del users[username]
+    
+    # Save updated users file
+    with open(USERS_PATH, 'w') as f:
+        json.dump(users, f, indent=4)
+    
+    success_msg = f"User '{username}' (Subject ID: {subject_id}) de-registered successfully"
+    print(f"✅ {success_msg}")
+    return True, success_msg
+
+def get_registered_users():
+    """Get list of all registered users."""
+    if not os.path.exists(USERS_PATH):
+        return []
+    
+    with open(USERS_PATH, 'r') as f:
+        users = json.load(f)
+    
+    return list(users.keys())
 
 # --- 2. MODEL TRAINING ---
 # PyTorch Dataset Class
@@ -143,9 +206,17 @@ def train_model():
 # --- 3. AUTHENTICATION ---
 def authenticate(username_claim, file_path, threshold=0.90):
     print(f"\n--- Authentication attempt for user '{username_claim}' ---")
+    
+    # Check if user exists
+    if not os.path.exists(USERS_PATH):
+        return False, "No users registered. Please register users first."
+    
+    with open(USERS_PATH, 'r') as f: users = json.load(f)
+    if username_claim not in users:
+        return False, f"User '{username_claim}' is not registered."
+    
     if not all(os.path.exists(p) for p in [MODEL_PATH, ENCODER_PATH, SCALER_PATH]):
-        print("❌ Error: Model assets not found. Please train the model first.")
-        return False
+        return False, "Model not trained. Please train the model first."
         
     encoder = joblib.load(ENCODER_PATH)
     scaler = joblib.load(SCALER_PATH)
@@ -153,11 +224,13 @@ def authenticate(username_claim, file_path, threshold=0.90):
     
     segments = load_and_segment_csv(file_path)
     if len(segments) == 0:
-        print("❌ Error: No valid data segments found in the file.")
-        return False
+        return False, "No valid EEG data segments found in the file."
         
-    # Majority vote for higher accuracy
+    # Detailed analysis for authentication
     predictions = []
+    confidences = []
+    predicted_users = []
+    
     for segment in segments:
         segment_scaled = scaler.transform(segment)
         segment_tensor = torch.tensor(segment_scaled, dtype=torch.float32).unsqueeze(0).to(device)
@@ -166,18 +239,75 @@ def authenticate(username_claim, file_path, threshold=0.90):
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
             confidence, predicted_idx = torch.max(probabilities, 1)
             
-            if confidence.item() >= threshold:
+            confidence_val = confidence.item()
+            confidences.append(confidence_val)
+            
+            if confidence_val >= threshold:
                 predicted_user = encoder.inverse_transform([predicted_idx.item()])[0]
+                predicted_users.append(predicted_user)
                 if predicted_user == username_claim:
-                    predictions.append(1) # Vote for grant
+                    predictions.append(1)
                 else:
-                    predictions.append(0) # Vote for deny
+                    predictions.append(0)
             else:
-                predictions.append(0) # Vote for deny (low confidence)
+                predicted_users.append("Low_Confidence")
+                predictions.append(0)
 
-    if sum(predictions) > len(predictions) / 2: # If more than 50% of segments pass
-        print("✅ ACCESS GRANTED")
-        return True
+    # Calculate statistics
+    total_segments = len(predictions)
+    positive_votes = sum(predictions)
+    avg_confidence = np.mean(confidences)
+    max_confidence = np.max(confidences)
+    
+    # Determine result and reason
+    if positive_votes > total_segments / 2:
+        reason = f"ACCESS GRANTED: {positive_votes}/{total_segments} segments matched '{username_claim}' (Avg confidence: {avg_confidence:.2f})"
+        print(f"✅ {reason}")
+        return True, reason
     else:
-        print("❌ ACCESS DENIED")
-        return False
+        # Analyze why access was denied
+        low_conf_count = sum(1 for c in confidences if c < threshold)
+        wrong_user_count = sum(1 for u in predicted_users if u != username_claim and u != "Low_Confidence")
+        
+        if low_conf_count > total_segments / 2:
+            reason = f"ACCESS DENIED: {low_conf_count}/{total_segments} segments had low confidence (<{threshold}). Max confidence: {max_confidence:.2f}"
+        elif wrong_user_count > 0:
+            most_predicted = max(set(predicted_users), key=predicted_users.count) if predicted_users else "Unknown"
+            reason = f"ACCESS DENIED: {wrong_user_count}/{total_segments} segments identified as different user. Most predicted: '{most_predicted}'"
+        else:
+            reason = f"ACCESS DENIED: Only {positive_votes}/{total_segments} segments matched '{username_claim}' (Need >50%)"
+        
+        print(f"❌ {reason}")
+        return False, reason
+
+def get_user_info(username):
+    """Get information about a registered user."""
+    if not os.path.exists(USERS_PATH):
+        return None
+    
+    with open(USERS_PATH, 'r') as f:
+        users = json.load(f)
+    
+    if username not in users:
+        return None
+    
+    user_data_path = os.path.join(ASSETS_DIR, f'data_{username}.npy')
+    info = {
+        'username': username,
+        'subject_id': users[username],
+        'data_exists': os.path.exists(user_data_path)
+    }
+    
+    if info['data_exists']:
+        try:
+            data = np.load(user_data_path)
+            info['data_segments'] = len(data)
+            info['data_shape'] = data.shape
+        except Exception as e:
+            info['data_segments'] = 'Error loading'
+            info['data_shape'] = 'Unknown'
+    else:
+        info['data_segments'] = 0
+        info['data_shape'] = 'No data'
+    
+    return info

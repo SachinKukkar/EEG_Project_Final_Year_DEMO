@@ -1,10 +1,19 @@
 import os
 import pandas as pd
 import numpy as np
-import logging
 from config import CHANNELS, WINDOW_SIZE, STEP_SIZE
 
-logger = logging.getLogger(__name__)
+# Simple logging setup
+try:
+    import logging
+    logger = logging.getLogger(__name__)
+except:
+    # Fallback if logging fails
+    class DummyLogger:
+        def info(self, msg): print(f"INFO: {msg}")
+        def error(self, msg): print(f"ERROR: {msg}")
+        def warning(self, msg): print(f"WARNING: {msg}")
+    logger = DummyLogger()
 
 def get_subject_files(data_dir, subject_id):
     """Finds all resting-state EEG files for a specific subject."""

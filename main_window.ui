@@ -48,10 +48,21 @@
          </property>
         </widget>
        </item>
-       <item row="2" column="1">
+       <item row="2" column="0">
         <widget class="QPushButton" name="RegisterButton">
          <property name="text">
           <string>Register User</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QPushButton" name="DeregisterButton">
+         <property name="text">
+          <string>De-register User</string>
+         </property>
+         <property name="styleSheet">
+          <string>QPushButton { background-color: #e74c3c; }
+QPushButton:hover { background-color: #c0392b; }</string>
          </property>
         </widget>
        </item>
