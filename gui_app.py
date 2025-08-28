@@ -11,73 +11,145 @@ import backend
 DARK_THEME_STYLESHEET = """
     /* Main Window */
     QMainWindow {
-        background-color: #2c3e50; /* Dark blue-grey background */
+        background-color: #2c3e50;
+        font-family: 'Segoe UI', Arial, sans-serif;
     }
 
     /* All Labels */
     QLabel {
-        color: #ecf0f1; /* Light grey text */
+        color: #ecf0f1;
+        font-size: 14px;
         font-family: 'Segoe UI', Arial, sans-serif;
     }
 
-    /* Group Boxes (for registration/authentication sections) */
+    /* Group Boxes */
     QGroupBox {
         color: #ecf0f1;
-        font: bold 14px;
-        border: 1px solid #34495e; /* Slightly lighter border */
-        border-radius: 6px;
-        margin-top: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        border: 1px solid #34495e;
+        border-radius: 8px;
+        margin-top: 12px;
+        padding-top: 15px;
+        background-color: #34495e;
     }
     QGroupBox::title {
         subcontrol-origin: margin;
         subcontrol-position: top center;
-        padding: 0 5px;
+        padding: 5px 10px;
+        background-color: #3498db;
+        border-radius: 4px;
+        color: white;
     }
 
     /* All Buttons */
     QPushButton {
         color: #ffffff;
-        background-color: #3498db; /* Bright blue */
+        background-color: #3498db;
         border: none;
-        padding: 10px 15px;
-        border-radius: 5px;
-        font: bold 12px;
+        padding: 10px 16px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        min-height: 16px;
     }
     QPushButton:hover {
-        background-color: #5dade2; /* Lighter blue on hover */
+        background-color: #5dade2;
     }
     QPushButton:pressed {
-        background-color: #217dbb; /* Darker blue when pressed */
+        background-color: #2980b9;
+    }
+
+    /* Register Button */
+    QPushButton[text="Register User"] {
+        background-color: #27ae60;
+    }
+    QPushButton[text="Register User"]:hover {
+        background-color: #2ecc71;
+    }
+
+    /* De-register Button */
+    QPushButton[text="De-register User"] {
+        background-color: #e74c3c;
+    }
+    QPushButton[text="De-register User"]:hover {
+        background-color: #ec7063;
+    }
+
+    /* Train Button */
+    QPushButton[text="Train Model on All Registered Users"] {
+        background-color: #f39c12;
+        font-size: 15px;
+        padding: 14px 20px;
+    }
+    QPushButton[text="Train Model on All Registered Users"]:hover {
+        background-color: #f1c40f;
+    }
+
+    /* Authenticate Button */
+    QPushButton[text="Authenticate"] {
+        background-color: #9b59b6;
+        font-size: 15px;
+        padding: 12px 18px;
+    }
+    QPushButton[text="Authenticate"]:hover {
+        background-color: #af7ac5;
     }
 
     /* Text Input Fields */
     QLineEdit {
-        background-color: #34495e; /* Darker input field */
+        background-color: #34495e;
         color: #ecf0f1;
         border: 1px solid #2c3e50;
         border-radius: 5px;
-        padding: 8px;
+        padding: 8px 12px;
+        font-size: 14px;
     }
     QLineEdit:focus {
-        border: 1px solid #3498db; /* Blue border when selected */
+        border: 1px solid #3498db;
+        background-color: #3d566e;
     }
     
-    /* SpinBox for Subject ID */
+    /* SpinBox */
     QSpinBox {
         background-color: #34495e;
         color: #ecf0f1;
         border: 1px solid #2c3e50;
         border-radius: 5px;
-        padding: 8px;
+        padding: 8px 12px;
+        font-size: 14px;
+        min-width: 80px;
     }
     QSpinBox:focus {
         border: 1px solid #3498db;
+        background-color: #3d566e;
+    }
+    QSpinBox::up-button, QSpinBox::down-button {
+        background-color: #3498db;
+        border: none;
+        width: 16px;
+    }
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+        background-color: #5dade2;
     }
 
-    /* The main Status Label */
+    /* Status Label */
     #StatusLabel {
-        font: bold 14px;
-        color: #f1c40f; /* Yellow for status */
+        font-size: 15px;
+        font-weight: 500;
+        color: #f1c40f;
+        background-color: rgba(44, 62, 80, 0.7);
+        border: 1px solid #34495e;
+        border-radius: 6px;
+        padding: 12px;
+        margin: 8px;
+    }
+
+    /* Form Labels */
+    QLabel[text="Username:"], QLabel[text="Subject ID:"] {
+        font-size: 14px;
+        font-weight: 500;
+        color: #bdc3c7;
     }
 """
 
@@ -194,11 +266,37 @@ class MainWindow(QtWidgets.QMainWindow):
         # Customize button text
         yes_button = msg_box.button(QtWidgets.QMessageBox.Yes)
         yes_button.setText("🗑️ Delete User")
-        yes_button.setStyleSheet("QPushButton { background-color: #e74c3c; color: white; font-weight: bold; padding: 8px 16px; }")
+        yes_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                font-weight: bold; 
+                font-size: 14px;
+                padding: 10px 16px; 
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #ec7063;
+            }
+        """)
         
         cancel_button = msg_box.button(QtWidgets.QMessageBox.Cancel)
         cancel_button.setText("❌ Cancel")
-        cancel_button.setStyleSheet("QPushButton { background-color: #95a5a6; color: white; padding: 8px 16px; }")
+        cancel_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #95a5a6; 
+                color: white; 
+                font-size: 14px;
+                font-weight: 500;
+                padding: 10px 16px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #a9b7bc;
+            }
+        """)
         
         # Set dialog size and styling
         msg_box.setStyleSheet("""
@@ -208,8 +306,8 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             QMessageBox QLabel {
                 color: #2c3e50;
-                font-size: 12px;
-                padding: 10px;
+                font-size: 14px;
+                padding: 15px;
             }
         """)
         
@@ -251,7 +349,20 @@ class MainWindow(QtWidgets.QMainWindow):
                     # Style the OK button
                     ok_button = success_msg.button(QtWidgets.QMessageBox.Ok)
                     ok_button.setText("✓ Got it!")
-                    ok_button.setStyleSheet("QPushButton { background-color: #27ae60; color: white; font-weight: bold; padding: 10px 20px; border-radius: 5px; }")
+                    ok_button.setStyleSheet("""
+                        QPushButton { 
+                            background-color: #27ae60; 
+                            color: white; 
+                            font-weight: bold; 
+                            font-size: 14px;
+                            padding: 10px 16px; 
+                            border-radius: 6px;
+                            border: none;
+                        }
+                        QPushButton:hover {
+                            background-color: #2ecc71;
+                        }
+                    """)
                     
                     # Style the dialog
                     success_msg.setStyleSheet("""
@@ -262,7 +373,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         }
                         QMessageBox QLabel {
                             color: #2c3e50;
-                            font-size: 13px;
+                            font-size: 14px;
                             padding: 20px;
                         }
                     """)
@@ -276,11 +387,30 @@ class MainWindow(QtWidgets.QMainWindow):
     def show_registered_users(self):
         """Show list of registered users."""
         users = backend.get_registered_users()
+        msg = QtWidgets.QMessageBox(self)
+        msg.setWindowTitle("👥 Registered Users")
+        
         if not users:
-            QtWidgets.QMessageBox.information(self, 'Registered Users', 'No users registered yet.')
+            msg.setIcon(QtWidgets.QMessageBox.Information)
+            msg.setText("<h3>No users registered yet</h3><p>Register some users to get started!</p>")
         else:
-            user_list = '\n'.join([f"• {user}" for user in users])
-            QtWidgets.QMessageBox.information(self, 'Registered Users', f'Registered Users:\n\n{user_list}')
+            msg.setIcon(QtWidgets.QMessageBox.Information)
+            user_list = '<br>'.join([f"• <b>{user}</b>" for user in users])
+            msg.setText(f"<h3>👥 Registered Users ({len(users)})</h3><br>{user_list}")
+        
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: #f8f9fa;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                min-width: 350px;
+            }
+            QMessageBox QLabel {
+                color: #2c3e50;
+                font-size: 14px;
+                padding: 15px;
+            }
+        """)
+        msg.exec_()
 
     def train_clicked(self):
         self.update_status("Training model... This may take a while.", "#f1c40f")
@@ -326,9 +456,22 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_status(self, message, color):
         """Helper function to update the status label text and color."""
         self.StatusLabel.setText(message)
-        self.StatusLabel.setStyleSheet(f"color: {color}; font: bold 12px; padding: 5px;")
+        self.StatusLabel.setStyleSheet(f"""
+            color: {color}; 
+            font-size: 15px; 
+            font-weight: 500; 
+            padding: 12px; 
+            background-color: rgba(44, 62, 80, 0.7);
+            border: 1px solid #34495e;
+            border-radius: 6px;
+            margin: 8px;
+        """)
         # Enable word wrap for long messages
         self.StatusLabel.setWordWrap(True)
+        
+        # Set window properties
+        self.setMinimumSize(600, 480)
+        self.setWindowTitle("🧠 EEG Biometric Authentication System")
     
     def show_context_menu(self, position):
         """Show context menu with additional options."""

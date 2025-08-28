@@ -6,12 +6,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>550</width>
-    <height>400</height>
+    <width>600</width>
+    <height>480</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>EEG Biometric Authentication</string>
+   <string>🧠 EEG Biometric Authentication System</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -117,7 +117,7 @@ QPushButton:hover { background-color: #c0392b; }</string>
      <widget class="QLabel" name="StatusLabel">
       <property name="font">
        <font>
-        <pointsize>11</pointsize>
+        <pointsize>13</pointsize>
         <weight>75</weight>
         <bold>true</bold>
        </font>
@@ -127,6 +127,12 @@ QPushButton:hover { background-color: #c0392b; }</string>
       </property>
       <property name="alignment">
        <set>Qt::AlignCenter</set>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>45</height>
+       </size>
       </property>
      </widget>
     </item>
