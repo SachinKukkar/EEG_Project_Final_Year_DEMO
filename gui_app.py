@@ -91,6 +91,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # --- Set Icons for Buttons ---
         self.setup_icons()
 
+        # --- Set Subject ID Range ---
+        self.SubjectIDSpinBox.setRange(1, 20)  # Based on your data (s01 to s20)
+        self.SubjectIDSpinBox.setValue(1)
+        
         # --- Connect Button Clicks to Functions ---
         self.RegisterButton.clicked.connect(self.register_clicked)
         self.TrainButton.clicked.connect(self.train_clicked)
@@ -116,18 +120,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # --- Backend Connection Functions ---
     def register_clicked(self):
-        username = self.UsernameLineEdit.text()
+        username = self.UsernameLineEdit.text().strip()
         subject_id = self.SubjectIDSpinBox.value()
-        if not username or subject_id == 0:
-            self.update_status("Please provide a username and valid Subject ID.", "red")
+        
+        if not username:
+            self.update_status("Please provide a username.", "red")
+            return
+        if subject_id == 0:
+            self.update_status("Please select a valid Subject ID (1-20).", "red")
             return
         
         self.update_status(f"Registering {username}...", "#f1c40f") # Yellow
-        success = backend.register_user(username, subject_id)
-        if success:
-            self.update_status("Registration successful.", "green")
+        QtWidgets.QApplication.processEvents()
+        
+        result = backend.register_user(username, subject_id)
+        if isinstance(result, tuple):
+            success, message = result
+            if success:
+                self.update_status(f"✅ {message}", "green")
+                self.UsernameLineEdit.clear()
+                self.SubjectIDSpinBox.setValue(0)
+            else:
+                self.update_status(f"❌ {message}", "red")
         else:
-            self.update_status("Registration failed. Check terminal for errors.", "red")
+            # Handle old return format (backward compatibility)
+            if result:
+                self.update_status("Registration successful.", "green")
+            else:
+                self.update_status("Registration failed. Check terminal for errors.", "red")
 
     def train_clicked(self):
         self.update_status("Training model... This may take a while.", "#f1c40f")
@@ -145,24 +165,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self.update_status(f"Selected: {os.path.basename(file_path)}", "#3498db") # Blue
 
     def authenticate_clicked(self):
-        username = self.UsernameLineEdit.text()
-        if not username or not self.selected_file_path:
-            self.update_status("Provide username and select a file.", "red")
+        username = self.UsernameLineEdit.text().strip()
+        if not username:
+            self.update_status("Please provide a username.", "red")
+            return
+        if not self.selected_file_path:
+            self.update_status("Please select an EEG file for authentication.", "red")
             return
 
         self.update_status(f"Authenticating {username}...", "#f1c40f")
         QtWidgets.QApplication.processEvents()
-        is_auth = backend.authenticate(username, self.selected_file_path)
         
-        if is_auth:
-            self.update_status("ACCESS GRANTED", "green")
+        result = backend.authenticate(username, self.selected_file_path)
+        if isinstance(result, tuple):
+            is_auth, reason = result
+            if is_auth:
+                self.update_status(f"✅ {reason}", "green")
+            else:
+                self.update_status(f"❌ {reason}", "red")
         else:
-            self.update_status("ACCESS DENIED", "red")
+            # Handle old return format (backward compatibility)
+            if result:
+                self.update_status("✅ ACCESS GRANTED", "green")
+            else:
+                self.update_status("❌ ACCESS DENIED", "red")
 
     def update_status(self, message, color):
         """Helper function to update the status label text and color."""
         self.StatusLabel.setText(message)
-        self.StatusLabel.setStyleSheet(f"color: {color}; font: bold 14px;")
+        self.StatusLabel.setStyleSheet(f"color: {color}; font: bold 12px; padding: 5px;")
+        # Enable word wrap for long messages
+        self.StatusLabel.setWordWrap(True)
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
