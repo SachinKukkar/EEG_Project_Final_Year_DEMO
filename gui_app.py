@@ -4,154 +4,10 @@ from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
 import backend
+from themes import LIGHT_THEME, DARK_THEME
+import traceback
 
-# ===================================================================
-# MODERN DARK THEME STYLESHEET
-# ===================================================================
-DARK_THEME_STYLESHEET = """
-    /* Main Window */
-    QMainWindow {
-        background-color: #2c3e50;
-        font-family: 'Segoe UI', Arial, sans-serif;
-    }
-
-    /* All Labels */
-    QLabel {
-        color: #ecf0f1;
-        font-size: 14px;
-        font-family: 'Segoe UI', Arial, sans-serif;
-    }
-
-    /* Group Boxes */
-    QGroupBox {
-        color: #ecf0f1;
-        font-size: 15px;
-        font-weight: 600;
-        border: 1px solid #34495e;
-        border-radius: 8px;
-        margin-top: 12px;
-        padding-top: 15px;
-        background-color: #34495e;
-    }
-    QGroupBox::title {
-        subcontrol-origin: margin;
-        subcontrol-position: top center;
-        padding: 5px 10px;
-        background-color: #3498db;
-        border-radius: 4px;
-        color: white;
-    }
-
-    /* All Buttons */
-    QPushButton {
-        color: #ffffff;
-        background-color: #3498db;
-        border: none;
-        padding: 10px 16px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 500;
-        min-height: 16px;
-    }
-    QPushButton:hover {
-        background-color: #5dade2;
-    }
-    QPushButton:pressed {
-        background-color: #2980b9;
-    }
-
-    /* Register Button */
-    QPushButton[text="Register User"] {
-        background-color: #27ae60;
-    }
-    QPushButton[text="Register User"]:hover {
-        background-color: #2ecc71;
-    }
-
-    /* De-register Button */
-    QPushButton[text="De-register User"] {
-        background-color: #e74c3c;
-    }
-    QPushButton[text="De-register User"]:hover {
-        background-color: #ec7063;
-    }
-
-    /* Train Button */
-    QPushButton[text="Train Model on All Registered Users"] {
-        background-color: #f39c12;
-        font-size: 15px;
-        padding: 14px 20px;
-    }
-    QPushButton[text="Train Model on All Registered Users"]:hover {
-        background-color: #f1c40f;
-    }
-
-    /* Authenticate Button */
-    QPushButton[text="Authenticate"] {
-        background-color: #9b59b6;
-        font-size: 15px;
-        padding: 12px 18px;
-    }
-    QPushButton[text="Authenticate"]:hover {
-        background-color: #af7ac5;
-    }
-
-    /* Text Input Fields */
-    QLineEdit {
-        background-color: #34495e;
-        color: #ecf0f1;
-        border: 1px solid #2c3e50;
-        border-radius: 5px;
-        padding: 8px 12px;
-        font-size: 14px;
-    }
-    QLineEdit:focus {
-        border: 1px solid #3498db;
-        background-color: #3d566e;
-    }
-    
-    /* SpinBox */
-    QSpinBox {
-        background-color: #34495e;
-        color: #ecf0f1;
-        border: 1px solid #2c3e50;
-        border-radius: 5px;
-        padding: 8px 12px;
-        font-size: 14px;
-        min-width: 80px;
-    }
-    QSpinBox:focus {
-        border: 1px solid #3498db;
-        background-color: #3d566e;
-    }
-    QSpinBox::up-button, QSpinBox::down-button {
-        background-color: #3498db;
-        border: none;
-        width: 16px;
-    }
-    QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-        background-color: #5dade2;
-    }
-
-    /* Status Label */
-    #StatusLabel {
-        font-size: 15px;
-        font-weight: 500;
-        color: #f1c40f;
-        background-color: rgba(44, 62, 80, 0.7);
-        border: 1px solid #34495e;
-        border-radius: 6px;
-        padding: 12px;
-        margin: 8px;
-    }
-
-    /* Form Labels */
-    QLabel[text="Username:"], QLabel[text="Subject ID:"] {
-        font-size: 14px;
-        font-weight: 500;
-        color: #bdc3c7;
-    }
-"""
+# Using themes from themes.py file
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -159,6 +15,7 @@ class MainWindow(QtWidgets.QMainWindow):
         uic.loadUi('main_window.ui', self)
         
         self.selected_file_path = ""
+        self.is_dark_theme = True  # Start with dark theme
 
         # --- Set Icons for Buttons ---
         self.setup_icons()
@@ -177,9 +34,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, 'DeregisterButton'):
             self.DeregisterButton.clicked.connect(self.deregister_clicked)
         
-        # Setup context menu
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.show_context_menu)
+        # Add top toolbar with hamburger menu and theme toggle
+        self.create_toolbar()
+        
+        # Add keyboard shortcuts
+        self.setup_shortcuts()
+        
+        # Set window properties
+        self.setMinimumSize(600, 480)
+        self.setWindowTitle("🧠 EEG Biometric Authentication System")
         
         self.show()
 
@@ -458,7 +321,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.StatusLabel.setText(message)
         self.StatusLabel.setStyleSheet(f"""
             color: {color}; 
-            font-size: 15px; 
+            font-size: 14px; 
             font-weight: 500; 
             padding: 12px; 
             background-color: rgba(44, 62, 80, 0.7);
@@ -469,24 +332,218 @@ class MainWindow(QtWidgets.QMainWindow):
         # Enable word wrap for long messages
         self.StatusLabel.setWordWrap(True)
         
-        # Set window properties
-        self.setMinimumSize(600, 480)
-        self.setWindowTitle("🧠 EEG Biometric Authentication System")
+        # Set window properties (moved to __init__)
+        pass
     
-    def show_context_menu(self, position):
-        """Show context menu with additional options."""
-        context_menu = QtWidgets.QMenu(self)
+    def create_toolbar(self):
+        """Create top toolbar with hamburger menu and theme toggle."""
+        # Create toolbar widget
+        toolbar = QtWidgets.QWidget()
+        toolbar_layout = QtWidgets.QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(10, 5, 10, 5)
         
-        show_users_action = context_menu.addAction("Show Registered Users")
+        # Hamburger menu button
+        self.menu_btn = QtWidgets.QPushButton("☰")
+        self.menu_btn.setFixedSize(40, 30)
+        self.menu_btn.clicked.connect(self.show_hamburger_menu)
+        
+        # Theme toggle button
+        self.theme_btn = QtWidgets.QPushButton("🌙")
+        self.theme_btn.setFixedSize(40, 30)
+        self.theme_btn.clicked.connect(self.toggle_theme)
+        
+        # Dashboard button (compact)
+        self.dashboard_btn = QtWidgets.QPushButton("📊")
+        self.dashboard_btn.setFixedSize(40, 30)
+        self.dashboard_btn.clicked.connect(self.show_dashboard)
+        self.dashboard_btn.setToolTip("Performance Dashboard")
+        
+        toolbar_layout.addWidget(self.menu_btn)
+        toolbar_layout.addWidget(self.dashboard_btn)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(self.theme_btn)
+        
+        # Add toolbar to main layout
+        if hasattr(self, 'centralwidget'):
+            main_layout = self.centralwidget.layout()
+            if main_layout:
+                main_layout.insertWidget(0, toolbar)
+    
+    def show_hamburger_menu(self):
+        """Show hamburger menu with all tools."""
+        menu = QtWidgets.QMenu(self)
+        
+        # User Management
+        show_users_action = menu.addAction("👥 Show Users")
         show_users_action.triggered.connect(self.show_registered_users)
         
-        context_menu.exec_(self.mapToGlobal(position))
+        menu.addSeparator()
+        
+        # Analysis Tools
+        signal_viewer_action = menu.addAction("📈 Signal Viewer")
+        signal_viewer_action.triggered.connect(self.show_signal_viewer)
+        
+        freq_analyzer_action = menu.addAction("🌊 Frequency Analyzer")
+        freq_analyzer_action.triggered.connect(self.show_frequency_analyzer)
+        
+        performance_action = menu.addAction("📉 Performance Analysis")
+        performance_action.triggered.connect(self.show_performance_analyzer)
+        
+        model_compare_action = menu.addAction("🔬 Model Comparison")
+        model_compare_action.triggered.connect(self.show_model_comparison)
+        
+        menu.addSeparator()
+        
+        # Settings
+        settings_action = menu.addAction("⚙️ Settings")
+        settings_action.triggered.connect(self.show_settings)
+        
+        # Show menu at button position
+        menu.exec_(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
+    
+    def show_dashboard(self):
+        """Show performance dashboard."""
+        try:
+            import dashboard
+            print("Dashboard module imported successfully")
+            self.dashboard_window = dashboard.show_dashboard()
+            print("Dashboard window created")
+            self.update_status("Dashboard opened", "green")
+        except ImportError as e:
+            print(f"Dashboard import error: {e}")
+            self.update_status(f"❌ Dashboard module missing", "red")
+        except Exception as e:
+            print(f"Dashboard error: {e}")
+            print(traceback.format_exc())
+            self.update_status(f"❌ Dashboard error: {str(e)}", "red")
+    
+    def show_signal_viewer(self):
+        """Show EEG signal viewer."""
+        try:
+            import signal_viewer
+            self.signal_viewer_window = signal_viewer.show_signal_viewer()
+        except Exception as e:
+            print(f"Signal viewer error: {e}")
+            print(traceback.format_exc())
+            self.update_status(f"❌ Signal viewer unavailable", "red")
+    
+    def show_frequency_analyzer(self):
+        """Show frequency analyzer."""
+        try:
+            import frequency_analyzer
+            self.freq_analyzer_window = frequency_analyzer.show_frequency_analyzer()
+        except Exception as e:
+            print(f"Frequency analyzer error: {e}")
+            self.update_status(f"❌ Frequency analyzer unavailable", "red")
+    
+    def show_performance_analyzer(self):
+        """Show performance analyzer."""
+        try:
+            import performance_analyzer
+            self.performance_window = performance_analyzer.show_performance_analyzer()
+        except Exception as e:
+            print(f"Performance analyzer error: {e}")
+            self.update_status(f"❌ Performance analyzer unavailable", "red")
+    
+    def show_model_comparison(self):
+        """Show model comparison tool."""
+        try:
+            import model_comparison
+            self.model_comparison_window = model_comparison.show_model_comparison()
+        except Exception as e:
+            print(f"Model comparison error: {e}")
+            self.update_status(f"❌ Model comparison unavailable", "red")
+    
+    def show_settings(self):
+        """Show settings panel."""
+        try:
+            import settings
+            settings_dialog = settings.SettingsPanel(self)
+            settings_dialog.exec_()
+        except Exception as e:
+            print(f"Settings error: {e}")
+            self.update_status(f"❌ Settings unavailable", "red")
+    
+    def setup_shortcuts(self):
+        """Setup keyboard shortcuts."""
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        
+        # Ctrl+R for Register
+        register_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+        register_shortcut.activated.connect(self.register_clicked)
+        
+        # Ctrl+T for Train
+        train_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+        train_shortcut.activated.connect(self.train_clicked)
+        
+        # Ctrl+A for Authenticate
+        auth_shortcut = QShortcut(QKeySequence("Ctrl+A"), self)
+        auth_shortcut.activated.connect(self.authenticate_clicked)
+        
+        # Ctrl+D for Dashboard
+        dashboard_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        dashboard_shortcut.activated.connect(self.show_dashboard)
+        
+        # Ctrl+S for Settings
+        settings_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        settings_shortcut.activated.connect(self.show_settings)
+        
+        # F1 for Help
+        help_shortcut = QShortcut(QKeySequence("F1"), self)
+        help_shortcut.activated.connect(self.show_help)
+        
+        # Escape to close any open dialogs
+        escape_shortcut = QShortcut(QKeySequence("Escape"), self)
+        escape_shortcut.activated.connect(self.close_dialogs)
+    
+    def show_help(self):
+        """Show help dialog."""
+        help_text = """
+🔑 KEYBOARD SHORTCUTS:
+
+Ctrl+R - Register User
+Ctrl+T - Train Model
+Ctrl+A - Authenticate
+Ctrl+D - Dashboard
+Ctrl+S - Settings
+F1 - Show Help
+
+🖱️ RIGHT-CLICK MENU:
+- Show Registered Users
+- EEG Signal Viewer
+- Frequency Analyzer
+- Performance Analysis
+- Model Comparison
+- Settings
+        """
+        
+        QtWidgets.QMessageBox.information(self, "📖 Help", help_text)
+    
+    def close_dialogs(self):
+        """Close any open dialog windows."""
+        for widget in QtWidgets.QApplication.topLevelWidgets():
+            if isinstance(widget, QtWidgets.QDialog) and widget.isVisible():
+                widget.close()
+    
+    def toggle_theme(self):
+        """Toggle between light and dark theme."""
+        self.is_dark_theme = not self.is_dark_theme
+        
+        if self.is_dark_theme:
+            QtWidgets.QApplication.instance().setStyleSheet(DARK_THEME)
+            self.theme_btn.setText("🌙")
+            self.update_status("Dark Theme", "#3498db")
+        else:
+            QtWidgets.QApplication.instance().setStyleSheet(LIGHT_THEME)
+            self.theme_btn.setText("☀️")
+            self.update_status("Light Theme", "#007bff")
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     
     # --- Apply the stylesheet to the entire app ---
-    app.setStyleSheet(DARK_THEME_STYLESHEET)
+    app.setStyleSheet(DARK_THEME)
     
     window = MainWindow()
     sys.exit(app.exec_())
