@@ -49,10 +49,13 @@ class EEG_CNN_Improved(nn.Module):
 
 def load_production_model(model_path, num_classes):
     """Loads the trained model for authentication."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # We know the input channels (4) and sequence length (256) are fixed
-    model = EEG_CNN_Improved(num_classes=num_classes, input_channels=4, sequence_length=256)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    return model, device
+    try:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # We know the input channels (4) and sequence length (256) are fixed
+        model = EEG_CNN_Improved(num_classes=num_classes, input_channels=4, sequence_length=256)
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.to(device)
+        model.eval()
+        return model, device
+    except Exception as e:
+        raise RuntimeError(f"Failed to load model: {e}")

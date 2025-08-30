@@ -7,27 +7,44 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from pathlib import Path
+import logging
 
 from eeg_processing import get_subject_files, load_and_segment_csv
 from model_management import EEG_CNN_Improved, load_production_model
+from database import db
+
+# Set random seeds for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(42)
 
 # --- CONFIGURATION ---
-ASSETS_DIR = 'assets'
-DATA_DIR = os.path.join('data', 'Filtered_Data')
-MODEL_PATH = os.path.join(ASSETS_DIR, 'model.pth')
-ENCODER_PATH = os.path.join(ASSETS_DIR, 'label_encoder.joblib')
-SCALER_PATH = os.path.join(ASSETS_DIR, 'scaler.joblib')
-USERS_PATH = os.path.join(ASSETS_DIR, 'users.json')
+BASE_DIR = Path(__file__).parent.absolute()
+ASSETS_DIR = BASE_DIR / 'assets'
+DATA_DIR = BASE_DIR / 'data' / 'Filtered_Data'
+MODEL_PATH = ASSETS_DIR / 'model.pth'
+ENCODER_PATH = ASSETS_DIR / 'label_encoder.joblib'
+SCALER_PATH = ASSETS_DIR / 'scaler.joblib'
+USERS_PATH = ASSETS_DIR / 'users.json'
+
+
 
 # --- 1. USER REGISTRATION ---
 def register_user(username, subject_id):
     print(f"--- Registering new user: {username} (Subject ID: {subject_id}) ---")
-    if not os.path.exists(ASSETS_DIR): os.makedirs(ASSETS_DIR)
     
-    # Load existing users
-    users = {}
-    if os.path.exists(USERS_PATH):
-        with open(USERS_PATH, 'r') as f: users = json.load(f)
+    try:
+        ASSETS_DIR.mkdir(exist_ok=True)
+        
+        # Load existing users
+        users = {}
+        if USERS_PATH.exists():
+            with open(USERS_PATH, 'r') as f:
+                users = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        return False, f"Error reading users file: {e}"
     
     # Check if subject ID is already used
     for existing_user, existing_subject_id in users.items():
@@ -42,94 +59,132 @@ def register_user(username, subject_id):
         print(f"❌ Error: {error_msg}")
         return False, error_msg
     
-    subject_files = get_subject_files(DATA_DIR, subject_id)
-    if not subject_files:
-        error_msg = f"No resting-state files found for Subject ID {subject_id}"
-        print(f"❌ Error: {error_msg}")
-        return False, error_msg
+    try:
+        subject_files = get_subject_files(str(DATA_DIR), subject_id)
+        if not subject_files:
+            error_msg = f"No resting-state files found for Subject ID {subject_id}"
+            print(f"❌ Error: {error_msg}")
+            return False, error_msg
 
-    all_segments = [seg for f in subject_files for seg in load_and_segment_csv(f) if len(seg) > 0]
-    if not all_segments:
-        error_msg = f"Could not extract valid data segments for {username}"
-        print(f"❌ Error: {error_msg}")
-        return False, error_msg
-        
-    user_data = np.array(all_segments)
-    np.save(os.path.join(ASSETS_DIR, f'data_{username}.npy'), user_data)
-    
-    users[username] = subject_id
-    with open(USERS_PATH, 'w') as f: json.dump(users, f, indent=4)
+        all_segments = []
+        for f in subject_files:
+            file_segments = load_and_segment_csv(f)
+            if len(file_segments) > 0:
+                all_segments.extend(file_segments)
+        if len(all_segments) == 0:
+            error_msg = f"Could not extract valid data segments for {username}"
+            print(f"❌ Error: {error_msg}")
+            return False, error_msg
             
-    success_msg = f"User {username} registered successfully with {len(all_segments)} data segments"
-    print(f"✅ {success_msg}")
-    return True, success_msg
+        user_data = np.array(all_segments)
+        np.save(ASSETS_DIR / f'data_{username}.npy', user_data)
+    except Exception as e:
+        return False, f"Error processing EEG data: {e}"
+    
+    try:
+        # Save to database first
+        if not db.add_user(username, subject_id, len(all_segments)):
+            return False, f"Database error: Could not save user {username}"
+        
+        # Save to JSON for backward compatibility
+        users[username] = subject_id
+        with open(USERS_PATH, 'w') as f:
+            json.dump(users, f, indent=4)
+        
+        success_msg = f"User {username} registered successfully with {len(all_segments)} data segments"
+        print(f"✅ {success_msg}")
+        return True, success_msg
+    except Exception as e:
+        # Rollback database if JSON save fails
+        db.remove_user(username)
+        return False, f"Error saving user data: {e}"
 
 def deregister_user(username):
     """Remove a registered user and their data."""
     print(f"--- De-registering user: {username} ---")
     
-    # Check if users file exists
-    if not os.path.exists(USERS_PATH):
-        error_msg = "No users registered yet."
-        print(f"❌ Error: {error_msg}")
-        return False, error_msg
-    
-    # Load existing users
-    with open(USERS_PATH, 'r') as f:
-        users = json.load(f)
-    
-    # Check if user exists
-    if username not in users:
-        error_msg = f"User '{username}' is not registered."
-        print(f"❌ Error: {error_msg}")
-        return False, error_msg
-    
-    # Remove user data file
-    user_data_path = os.path.join(ASSETS_DIR, f'data_{username}.npy')
-    if os.path.exists(user_data_path):
-        os.remove(user_data_path)
-        print(f"Removed data file: {user_data_path}")
-    
-    # Remove user from registry
-    subject_id = users[username]
-    del users[username]
-    
-    # Save updated users file
-    with open(USERS_PATH, 'w') as f:
-        json.dump(users, f, indent=4)
-    
-    success_msg = f"User '{username}' (Subject ID: {subject_id}) de-registered successfully"
-    print(f"✅ {success_msg}")
-    return True, success_msg
+    try:
+        if not USERS_PATH.exists():
+            return False, "No users registered yet."
+        
+        with open(USERS_PATH, 'r') as f:
+            users = json.load(f)
+        
+        if username not in users:
+            return False, f"User '{username}' is not registered."
+        
+        subject_id = users[username]
+        user_data_path = ASSETS_DIR / f'data_{username}.npy'
+        
+        # Remove from database first
+        if not db.remove_user(username):
+            return False, f"Database error: Could not remove user {username}"
+        
+        # Remove data file
+        if user_data_path.exists():
+            user_data_path.unlink()
+            print(f"Removed data file: {user_data_path}")
+        
+        # Update JSON
+        del users[username]
+        with open(USERS_PATH, 'w') as f:
+            json.dump(users, f, indent=4)
+        
+        success_msg = f"User '{username}' (Subject ID: {subject_id}) de-registered successfully"
+        print(f"✅ {success_msg}")
+        return True, success_msg
+        
+    except Exception as e:
+        return False, f"Error during de-registration: {e}"
 
 def get_registered_users():
     """Get list of all registered users."""
-    if not os.path.exists(USERS_PATH):
+    try:
+        # Get from database first
+        db_users = db.get_users()
+        if db_users:
+            return list(db_users.keys())
+        
+        # Fallback to JSON file
+        if not USERS_PATH.exists():
+            return []
+        
+        with open(USERS_PATH, 'r') as f:
+            users = json.load(f)
+        
+        return list(users.keys())
+    except Exception as e:
+        logging.error(f"Error getting registered users: {e}")
         return []
-    
-    with open(USERS_PATH, 'r') as f:
-        users = json.load(f)
-    
-    return list(users.keys())
 
 # --- 2. MODEL TRAINING ---
-# PyTorch Dataset Class
+# PyTorch Dataset Class with lazy loading
 class EEGDataset(Dataset):
     def __init__(self, features, labels):
-        self.features = torch.tensor(features, dtype=torch.float32)
-        self.labels = torch.tensor(labels, dtype=torch.long)
+        self.features = features  # Keep as numpy arrays
+        self.labels = labels
     def __len__(self): return len(self.features)
-    def __getitem__(self, idx): return self.features[idx], self.labels[idx]
+    def __getitem__(self, idx): 
+        return torch.tensor(self.features[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
 
 def train_model():
     print("\n--- Training main authentication model ---")
-    with open(USERS_PATH, 'r') as f: users = json.load(f)
-    
-    all_data, all_labels = [], []
-    for username in users:
-        user_data = np.load(os.path.join(ASSETS_DIR, f'data_{username}.npy'))
-        all_data.append(user_data)
-        all_labels.extend([username] * len(user_data))
+    try:
+        with open(USERS_PATH, 'r') as f:
+            users = json.load(f)
+        
+        all_data, all_labels = [], []
+        for username in users:
+            user_data_path = ASSETS_DIR / f'data_{username}.npy'
+            if not user_data_path.exists():
+                print(f"Warning: Data file missing for user {username}")
+                continue
+            user_data = np.load(user_data_path)
+            all_data.append(user_data)
+            all_labels.extend([username] * len(user_data))
+    except Exception as e:
+        print(f"❌ Error loading training data: {e}")
+        return False
 
     X = np.concatenate(all_data)
     y = np.array(all_labels)
@@ -159,82 +214,110 @@ def train_model():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
     
-    # Training Loop with Early Stopping
-    num_epochs, patience, best_val_loss, epochs_no_improve = 50, 5, float('inf'), 0
-    print(f"Starting training for {num_epochs} epochs on {device}...")
-    for epoch in range(num_epochs):
-        model.train()
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+    try:
+        # Training Loop with Early Stopping
+        num_epochs, patience, best_val_loss, epochs_no_improve = 50, 5, float('inf'), 0
+        print(f"Starting training for {num_epochs} epochs on {device}...")
         
-        # Validation
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for inputs, labels in val_loader:
+        for epoch in range(num_epochs):
+            model.train()
+            for inputs, labels in train_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
+                optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
-                val_loss += loss.item()
-        
-        avg_val_loss = val_loss / len(val_loader)
-        print(f"Epoch [{epoch+1}/{num_epochs}], Validation Loss: {avg_val_loss:.4f}")
-        
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), MODEL_PATH)
-            epochs_no_improve = 0
-            print("  ✨ New best model saved!")
-        else:
-            epochs_no_improve += 1
-        
-        if epochs_no_improve >= patience:
-            print(f"🛑 Early stopping triggered after {epoch+1} epochs.")
-            break
+                loss.backward()
+                optimizer.step()
             
-    # Save assets
-    joblib.dump(encoder, ENCODER_PATH)
-    joblib.dump(scaler, SCALER_PATH)
-    print("✅ Model training complete and assets saved.")
-    return True
+            # Validation
+            model.eval()
+            val_loss = 0.0
+            with torch.inference_mode():
+                for inputs, labels in val_loader:
+                    inputs, labels = inputs.to(device), labels.to(device)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    val_loss += loss.item()
+            
+            avg_val_loss = val_loss / len(val_loader)
+            print(f"Epoch [{epoch+1}/{num_epochs}], Validation Loss: {avg_val_loss:.4f}")
+            
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                torch.save(model.state_dict(), MODEL_PATH)
+                epochs_no_improve = 0
+                print("  ✨ New best model saved!")
+            else:
+                epochs_no_improve += 1
+            
+            if epochs_no_improve >= patience:
+                print(f"🛑 Early stopping triggered after {epoch+1} epochs.")
+                break
+                
+        # Save assets
+        joblib.dump(encoder, ENCODER_PATH)
+        joblib.dump(scaler, SCALER_PATH)
+        print("✅ Model training complete and assets saved.")
+        return True
+    except Exception as e:
+        print(f"❌ Training failed: {e}")
+        return False
 
 # --- 3. AUTHENTICATION ---
 def authenticate(username_claim, file_path, threshold=0.90):
     print(f"\n--- Authentication attempt for user '{username_claim}' ---")
     
-    # Check if user exists
-    if not os.path.exists(USERS_PATH):
-        return False, "No users registered. Please register users first."
-    
-    with open(USERS_PATH, 'r') as f: users = json.load(f)
-    if username_claim not in users:
-        return False, f"User '{username_claim}' is not registered."
-    
-    if not all(os.path.exists(p) for p in [MODEL_PATH, ENCODER_PATH, SCALER_PATH]):
-        return False, "Model not trained. Please train the model first."
+    try:
         
-    encoder = joblib.load(ENCODER_PATH)
-    scaler = joblib.load(SCALER_PATH)
-    model, device = load_production_model(MODEL_PATH, num_classes=len(encoder.classes_))
-    
-    segments = load_and_segment_csv(file_path)
-    if len(segments) == 0:
-        return False, "No valid EEG data segments found in the file."
+        # Check if user exists
+        if not USERS_PATH.exists():
+            return False, "No users registered. Please register users first."
         
-    # Detailed analysis for authentication
+        with open(USERS_PATH, 'r') as f:
+            users = json.load(f)
+        if username_claim not in users:
+            return False, f"User '{username_claim}' is not registered."
+        
+        # Note: Subject ID validation moved to authenticate_with_subject_id function
+        
+        # Check model files exist
+        required_files = [MODEL_PATH, ENCODER_PATH, SCALER_PATH]
+        if not all(p.exists() for p in required_files):
+            return False, "Model not trained. Please train the model first."
+        
+        # Load model components with error handling
+        encoder = joblib.load(ENCODER_PATH)
+        scaler = joblib.load(SCALER_PATH)
+        model, device = load_production_model(str(MODEL_PATH), num_classes=len(encoder.classes_))
+        
+        # Process segments
+        segments = load_and_segment_csv(file_path)
+        if len(segments) == 0:
+            return False, "No valid EEG data segments found in the file."
+        
+        # Authenticate segments
+        result = _process_authentication_segments(segments, model, device, scaler, encoder, username_claim, threshold)
+        
+        # Log to database
+        db.log_authentication(username_claim, result[0], result[2] if len(result) > 2 else 0, result[1])
+        return result[0], result[1]
+        
+    except Exception as e:
+        error_msg = f"Authentication error: {e}"
+        print(f"❌ {error_msg}")
+        return False, error_msg
+
+def _process_authentication_segments(segments, model, device, scaler, encoder, username_claim, threshold):
+    """Process EEG segments for authentication."""
     predictions = []
     confidences = []
     predicted_users = []
     
-    for segment in segments:
-        segment_scaled = scaler.transform(segment)
-        segment_tensor = torch.tensor(segment_scaled, dtype=torch.float32).unsqueeze(0).to(device)
-        with torch.no_grad():
+    with torch.inference_mode():
+        for segment in segments:
+            segment_scaled = scaler.transform(segment)
+            segment_tensor = torch.tensor(segment_scaled, dtype=torch.float32).unsqueeze(0).to(device)
+            
             outputs = model(segment_tensor)
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
             confidence, predicted_idx = torch.max(probabilities, 1)
@@ -245,27 +328,25 @@ def authenticate(username_claim, file_path, threshold=0.90):
             if confidence_val >= threshold:
                 predicted_user = encoder.inverse_transform([predicted_idx.item()])[0]
                 predicted_users.append(predicted_user)
-                if predicted_user == username_claim:
-                    predictions.append(1)
-                else:
-                    predictions.append(0)
+                predictions.append(1 if predicted_user == username_claim else 0)
             else:
                 predicted_users.append("Low_Confidence")
                 predictions.append(0)
+    
+    return _determine_authentication_result(predictions, confidences, predicted_users, username_claim, threshold)
 
-    # Calculate statistics
+def _determine_authentication_result(predictions, confidences, predicted_users, username_claim, threshold):
+    """Determine final authentication result."""
     total_segments = len(predictions)
     positive_votes = sum(predictions)
     avg_confidence = np.mean(confidences)
     max_confidence = np.max(confidences)
     
-    # Determine result and reason
     if positive_votes > total_segments / 2:
         reason = f"ACCESS GRANTED: {positive_votes}/{total_segments} segments matched '{username_claim}' (Avg confidence: {avg_confidence:.2f})"
         print(f"✅ {reason}")
-        return True, reason
+        return True, reason, avg_confidence
     else:
-        # Analyze why access was denied
         low_conf_count = sum(1 for c in confidences if c < threshold)
         wrong_user_count = sum(1 for u in predicted_users if u != username_claim and u != "Low_Confidence")
         
@@ -278,36 +359,86 @@ def authenticate(username_claim, file_path, threshold=0.90):
             reason = f"ACCESS DENIED: Only {positive_votes}/{total_segments} segments matched '{username_claim}' (Need >50%)"
         
         print(f"❌ {reason}")
-        return False, reason
+        return False, reason, max_confidence
 
 def get_user_info(username):
     """Get information about a registered user."""
-    if not os.path.exists(USERS_PATH):
+    try:
+        if not USERS_PATH.exists():
+            return None
+        
+        with open(USERS_PATH, 'r') as f:
+            users = json.load(f)
+        
+        if username not in users:
+            return None
+        
+        user_data_path = ASSETS_DIR / f'data_{username}.npy'
+        info = {
+            'username': username,
+            'subject_id': users[username],
+            'data_exists': user_data_path.exists()
+        }
+        
+        if info['data_exists']:
+            try:
+                data = np.load(user_data_path)
+                info['data_segments'] = len(data)
+                info['data_shape'] = data.shape
+            except Exception as e:
+                info['data_segments'] = 'Error loading'
+                info['data_shape'] = 'Unknown'
+        else:
+            info['data_segments'] = 0
+            info['data_shape'] = 'No data'
+        
+        return info
+    except Exception as e:
+        logging.error(f"Error getting user info: {e}")
         return None
+
+def authenticate_with_subject_id(username_claim, gui_subject_id, file_path, threshold=0.90):
+    """Authentication with GUI Subject ID validation."""
+    print(f"\n--- Authentication attempt for user '{username_claim}' with Subject ID {gui_subject_id} ---")
     
-    with open(USERS_PATH, 'r') as f:
-        users = json.load(f)
-    
-    if username not in users:
-        return None
-    
-    user_data_path = os.path.join(ASSETS_DIR, f'data_{username}.npy')
-    info = {
-        'username': username,
-        'subject_id': users[username],
-        'data_exists': os.path.exists(user_data_path)
-    }
-    
-    if info['data_exists']:
-        try:
-            data = np.load(user_data_path)
-            info['data_segments'] = len(data)
-            info['data_shape'] = data.shape
-        except Exception as e:
-            info['data_segments'] = 'Error loading'
-            info['data_shape'] = 'Unknown'
-    else:
-        info['data_segments'] = 0
-        info['data_shape'] = 'No data'
-    
-    return info
+    try:
+        # Check if user exists
+        if not USERS_PATH.exists():
+            return False, "No users registered. Please register users first."
+        
+        with open(USERS_PATH, 'r') as f:
+            users = json.load(f)
+        if username_claim not in users:
+            return False, f"User '{username_claim}' is not registered."
+        
+        # Validate GUI Subject ID matches registered user's Subject ID
+        registered_subject_id = users[username_claim]
+        if gui_subject_id != registered_subject_id:
+            return False, f"Subject ID mismatch: User '{username_claim}' is registered with Subject ID {registered_subject_id}, but you entered {gui_subject_id}"
+        
+        # Validate file Subject ID matches registered user's Subject ID
+        file_subject_id = _extract_subject_id_from_filename(file_path)
+        if file_subject_id != registered_subject_id:
+            return False, f"File Subject ID mismatch: File is from subject {file_subject_id}, but user '{username_claim}' is registered with subject {registered_subject_id}"
+        
+        # All validations passed, proceed with authentication
+        return authenticate(username_claim, file_path, threshold)
+        
+    except Exception as e:
+        error_msg = f"Authentication error: {e}"
+        print(f"❌ {error_msg}")
+        return False, error_msg
+
+def _extract_subject_id_from_filename(file_path):
+    """Extract subject ID from EEG filename (e.g., s01_ex01_s01.csv -> 1)."""
+    try:
+        filename = Path(file_path).name
+        # Extract subject ID from filename pattern like s01_ex01_s01.csv
+        if filename.startswith('s') and '_' in filename:
+            subject_str = filename.split('_')[0]  # Get 's01' part
+            subject_id = int(subject_str[1:])  # Remove 's' and convert to int
+            return subject_id
+        else:
+            raise ValueError(f"Invalid filename format: {filename}")
+    except Exception as e:
+        raise ValueError(f"Cannot extract subject ID from filename {file_path}: {e}")

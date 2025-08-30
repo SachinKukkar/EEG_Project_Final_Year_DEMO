@@ -105,6 +105,7 @@ class PerformanceDashboard(QtWidgets.QWidget):
     def show_system_stats(self):
         """Display system statistics."""
         from backend import get_registered_users
+        from database import db
         import backend
         
         stats = []
@@ -114,16 +115,24 @@ class PerformanceDashboard(QtWidgets.QWidget):
         stats.append(f"📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         stats.append("")
         
-        # User statistics
-        users = get_registered_users()
-        stats.append(f"👥 Total Registered Users: {len(users)}")
+        # Database statistics
+        auth_stats = db.get_auth_stats()
+        stats.append("📊 DATABASE STATISTICS:")
+        stats.append(f"  Total Authentication Attempts: {auth_stats['total_attempts']}")
+        stats.append(f"  Successful Authentications: {auth_stats['successful']}")
+        stats.append(f"  Success Rate: {auth_stats['success_rate']:.2%}")
+        stats.append(f"  Average Confidence: {auth_stats['avg_confidence']:.3f}")
+        stats.append("")
         
-        if users:
-            stats.append("📋 User Details:")
-            for user in users:
-                info = backend.get_user_info(user)
-                if info:
-                    stats.append(f"  • {user}: Subject ID {info['subject_id']}, {info['data_segments']} segments")
+        # User statistics from database
+        db_users = db.get_users()
+        users = get_registered_users()
+        stats.append(f"👥 Total Registered Users: {len(users)} (DB: {len(db_users)})")
+        
+        if db_users:
+            stats.append("📋 User Details (from Database):")
+            for username, user_data in db_users.items():
+                stats.append(f"  • {username}: Subject ID {user_data['subject_id']}, {user_data['data_segments']} segments")
         
         # Model information
         model_exists = os.path.exists('assets/model.pth')
@@ -145,36 +154,55 @@ class PerformanceDashboard(QtWidgets.QWidget):
                     subject = file.split('_')[0]
                     subjects.add(subject)
             stats.append(f"🧠 Available Subjects: {len(subjects)}")
+            
+        # Database file info
+        if os.path.exists('eeg_system.db'):
+            db_size = os.path.getsize('eeg_system.db') / 1024
+            stats.append(f"💾 Database Size: {db_size:.1f} KB")
         
         self.results_text.setText('\n'.join(stats))
         
     def show_user_analytics(self):
         """Show detailed user analytics."""
         from backend import get_registered_users, get_user_info
+        from database import db
         
         analytics = []
         analytics.append("=" * 50)
-        analytics.append("👥 USER ANALYTICS REPORT")
+        analytics.append("👥 USER ANALYTICS REPORT (DATABASE)")
         analytics.append("=" * 50)
         
-        users = get_registered_users()
-        if not users:
-            analytics.append("❌ No users registered yet.")
+        db_users = db.get_users()
+        if not db_users:
+            analytics.append("❌ No users in database yet.")
         else:
-            for user in users:
-                info = get_user_info(user)
-                if info:
-                    analytics.append(f"\n🔍 User: {user}")
-                    analytics.append(f"  📋 Subject ID: {info['subject_id']}")
-                    analytics.append(f"  📊 Data Segments: {info['data_segments']}")
-                    analytics.append(f"  💾 Data File: {'✅ Exists' if info['data_exists'] else '❌ Missing'}")
-                    
-                    if info['data_exists'] and isinstance(info['data_segments'], int):
-                        # Calculate data quality metrics
-                        total_samples = info['data_segments'] * 256  # 256 samples per segment
-                        duration_seconds = total_samples / 256  # Assuming 256 Hz sampling rate
-                        analytics.append(f"  ⏱️  Total Duration: {duration_seconds:.1f} seconds")
-                        analytics.append(f"  🔢 Total Samples: {total_samples:,}")
+            for username, user_data in db_users.items():
+                analytics.append(f"\n🔍 User: {username}")
+                analytics.append(f"  📋 Subject ID: {user_data['subject_id']}")
+                analytics.append(f"  📊 Data Segments: {user_data['data_segments']}")
+                
+                # Check if data file exists
+                data_file = f"assets/data_{username}.npy"
+                file_exists = os.path.exists(data_file)
+                analytics.append(f"  💾 Data File: {'✅ Exists' if file_exists else '❌ Missing'}")
+                
+                if file_exists and user_data['data_segments'] > 0:
+                    # Calculate data quality metrics
+                    total_samples = user_data['data_segments'] * 256
+                    duration_seconds = total_samples / 256
+                    analytics.append(f"  ⏱️  Total Duration: {duration_seconds:.1f} seconds")
+                    analytics.append(f"  🔢 Total Samples: {total_samples:,}")
+        
+        # Add authentication statistics
+        auth_stats = db.get_auth_stats()
+        if auth_stats['total_attempts'] > 0:
+            analytics.append("\n" + "=" * 30)
+            analytics.append("🔐 AUTHENTICATION STATISTICS")
+            analytics.append("=" * 30)
+            analytics.append(f"Total Attempts: {auth_stats['total_attempts']}")
+            analytics.append(f"Successful: {auth_stats['successful']}")
+            analytics.append(f"Success Rate: {auth_stats['success_rate']:.2%}")
+            analytics.append(f"Avg Confidence: {auth_stats['avg_confidence']:.3f}")
         
         self.results_text.setText('\n'.join(analytics))
         

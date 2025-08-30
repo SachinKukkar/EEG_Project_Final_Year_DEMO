@@ -80,7 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if success:
                 self.update_status(f"✅ {message}", "green")
                 self.UsernameLineEdit.clear()
-                self.SubjectIDSpinBox.setValue(0)
+                self.SubjectIDSpinBox.setValue(1)
             else:
                 self.update_status(f"❌ {message}", "red")
         else:
@@ -292,8 +292,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def authenticate_clicked(self):
         username = self.UsernameLineEdit.text().strip()
+        subject_id = self.SubjectIDSpinBox.value()
+        
         if not username:
             self.update_status("Please provide a username.", "red")
+            return
+        if subject_id == 0:
+            self.update_status("Please select a valid Subject ID (1-20).", "red")
             return
         if not self.selected_file_path:
             self.update_status("Please select an EEG file for authentication.", "red")
@@ -302,7 +307,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_status(f"Authenticating {username}...", "#f1c40f")
         QtWidgets.QApplication.processEvents()
         
-        result = backend.authenticate(username, self.selected_file_path)
+        result = backend.authenticate_with_subject_id(username, subject_id, self.selected_file_path)
         if isinstance(result, tuple):
             is_auth, reason = result
             if is_auth:
